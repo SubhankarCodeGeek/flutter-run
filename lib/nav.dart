@@ -21,7 +21,7 @@ class _NavState extends State<Nav> {
         ),
         actions: [IconButton(onPressed: () {}, icon: const Icon(Icons.settings))], // Optional Actions
       ),
-      body: HomePage()// Your main content here
+      body: const HomePage()// Your main content here
     );
   }
 }
