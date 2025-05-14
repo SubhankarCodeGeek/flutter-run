@@ -1,10 +1,10 @@
-// Navigation Service
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/home_screen.dart';
-import '../features/settings_screen.dart';
+import '../features/bluetooth_connection/presentation/pages/bluetooth_discovery.dart';
+import '../features/home/presentation/pages/home_screen.dart';
+import '../features/settings/presentation/pages/settings_screen.dart';
 import '../main.dart';
 import 'local_service.dart';
 import 'localization_service.dart';
@@ -20,10 +20,10 @@ class NavigationService {
         },
         branches: [
           StatefulShellBranch(
-            routes: [GoRoute(path: '/home', builder: (context, state) => HomeScreen())],
+            routes: [GoRoute(path: '/home', builder: (context, state) => const HomeScreen())],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/settings', builder: (context, state) => SettingsScreen())],
+            routes: [GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen())],
           ),
         ],
       ),
@@ -52,30 +52,44 @@ extension NavigationServiceExtension on NavigationService {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text("data",style: TextStyle(fontSize: 12), ),
-                Text("data", )
+                Text('data', style: TextStyle(fontSize: 12)),
+                Text('data'),
               ],
             ),
           ),
           ListTile(
-            title: const Text("Change Language"),
+            title: const Text('Change Language'),
             onTap: () {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text("Select Language"),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: LocalizationService.supportedLocales.map((locale) {
-                      return ListTile(
-                        title: Text(locale.languageCode),
-                        onTap: () {
-                          BlocProvider.of<LocaleService>(context).changeLocale(locale);
-                          Navigator.pop(context);
-                        },
-                      );
-                    }).toList(),
+                  title: const Text('Select Language'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: LocalizationService.supportedLocales.map((locale) {
+                        return ListTile(
+                          title: Text(locale.languageCode),
+                          onTap: () {
+                            BlocProvider.of<LocaleService>(context).changeLocale(locale);
+                            Navigator.pop(context);
+                          },
+                        );
+                      }).toList(),
+                    ),
                   ),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            title: const Text('Scan Devices'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DeviceScanScreen(),
                 ),
               );
             },

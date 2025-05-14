@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fultter_run/features/presentation/bloc/bluetooth_bloc.dart';
 import 'package:fultter_run/services/feature_toggle_service.dart';
 import 'package:fultter_run/services/local_service.dart';
 import 'package:fultter_run/services/localization_service.dart';
 import 'package:fultter_run/services/navigation_services.dart';
 
 import 'core/config/config.dart';
+import 'features/presentation/bloc/bluetooth_event.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +26,7 @@ class MyApp extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => LocaleService()),
         BlocProvider(create: (_) => FeatureToggleService()),
+        BlocProvider(create: (_) => BluetoothBloc()),
       ],
       child: BlocBuilder<LocaleService, Locale>(
         builder: (context, locale) {

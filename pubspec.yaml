@@ -40,6 +40,18 @@ dependencies:
   go_router: ^7.0.0
   flutter_bloc: ^9.0.0
 
+  flutter_blue_plus: ^1.31.11
+  firebase_core: ^2.25.4
+  cloud_firestore: ^4.15.4
+  shared_preferences: ^2.2.2
+  encrypt: ^5.0.1        # For secure payloads
+  connectivity_plus: ^6.0.1  # To detect network availability
+  flutter_secure_storage: ^9.0.0  # If storing sensitive data locally
+  equatable: ^2.0.5       # For cleaner BLoC state comparisons
+  get_it: ^8.0.3
+  permission_handler: ^12.0.0+1
+  wifi_scan: ^0.4.1+2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
