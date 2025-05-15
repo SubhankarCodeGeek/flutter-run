@@ -10,15 +10,14 @@ class WifiBloc extends Bloc<WifiEvent, WifiState> {
   StreamSubscription<List<WiFiAccessPoint>>? _wifiScanSubscription;
   bool _isScanInProgress = false;
 
-
   WifiBloc() : super(const WifiInitial()) {
     on<StartWifiScan>(_onStartWifiScan);
   }
 
   Future<void> _onStartWifiScan(
-      StartWifiScan event,
-      Emitter<WifiState> emit,
-      ) async {
+    StartWifiScan event,
+    Emitter<WifiState> emit,
+  ) async {
     if (_isScanInProgress) return; // Prevent multiple concurrent scans
 
     _isScanInProgress = true;
@@ -32,32 +31,46 @@ class WifiBloc extends Bloc<WifiEvent, WifiState> {
       _isScanInProgress = false;
       return;
     }
-    if (!locationStatus.isGranted) { // Handle other cases like restricted
-      emit(const WifiPermissionsDenied("Location permission was not granted. Cannot scan Wi-Fi."));
+    if (!locationStatus.isGranted) {
+      // Handle other cases like restricted
+      emit(const WifiPermissionsDenied(
+          "Location permission was not granted. Cannot scan Wi-Fi."));
       _isScanInProgress = false;
       return;
     }
 
-
     // 2. Check if Wi-Fi service is available (e.g., Wi-Fi is turned on)
-    final canStartScanCode = await WiFiScan.instance.canStartScan();
+    final canStartScanCode =
+        await WiFiScan.instance.canStartScan(askPermissions: true);
     if (canStartScanCode != CanStartScan.yes) {
       String errorMessage;
       switch (canStartScanCode) {
         case CanStartScan.noLocationPermissionRequired:
-          errorMessage = "Location permission is required by the OS to get Wi-Fi scan results.";
+          errorMessage =
+              "Location permission is required by the OS to get Wi-Fi scan results.";
           break;
-        case CanStartScan.noLocationServiceTurnedOn:
-          errorMessage = "Location services are turned off. Please enable them.";
+        case CanStartScan.noLocationPermissionDenied:
+          errorMessage =
+              "Location permission has been denied. Please enable it in Settings.";
           break;
-        case CanStartScan.noWifiAdapter:
-          errorMessage = "No Wi-Fi adapter found on this device.";
+        case CanStartScan.noLocationPermissionUpgradeAccuracy:
+          errorMessage =
+              "Location accuracy needs to be upgraded. Please set to ‘High accuracy.’";
           break;
-        case CanStartScan.error RetrievingScanResults:
-          errorMessage = "Error retrieving scan results capability.";
+        case CanStartScan.noLocationServiceDisabled:
+          errorMessage =
+              "Location services are turned off. Please enable them.";
+          break;
+        case CanStartScan.notSupported:
+          errorMessage =
+              "Wi-Fi scanning is not supported on this device or platform.";
+          break;
+        case CanStartScan.failed:
+          errorMessage = "Failed to start Wi-Fi scan. Please try again.";
           break;
         default:
-          errorMessage = "Cannot start Wi-Fi scan. Ensure Wi-Fi and location services are on.";
+          errorMessage =
+              "Cannot start Wi-Fi scan. Ensure Wi-Fi and location services are on.";
       }
       emit(WifiScanFailure(errorMessage));
       _isScanInProgress = false;
@@ -76,30 +89,30 @@ class WifiBloc extends Bloc<WifiEvent, WifiState> {
       }
 
       // 4. Listen to Results
-      await _wifiScanSubscription?.cancel(); // Cancel previous subscription if any
-      _wifiScanSubscription = WiFiScan.instance.onScannedResultsAvailable.listen(
-              (List<WiFiAccessPoint> results) {
-            // Sort by RSSI (strongest first), then by SSID for stability
-            results.sort((a, b) {
-              final rssiComp = b.level.compareTo(a.level);
-              if (rssiComp != 0) return rssiComp;
-              return a.ssid.compareTo(b.ssid);
-            });
-            if (state is WifiScanning || state is WifiScanSuccess) { // Only emit if still relevant
-              emit(WifiScanSuccess(results));
-            }
-          },
-          onError: (error) {
-            // print("Error listening to Wi-Fi scan results: $error");
-            if (state is WifiScanning || state is WifiScanSuccess) {
-              emit(WifiScanFailure("Error receiving Wi-Fi scan results: ${error.toString()}"));
-            }
-            _isScanInProgress = false; // Reset flag on error
-          },
-          onDone: () {
-            _isScanInProgress = false; // Reset flag when stream is done
-          }
-      );
+      await _wifiScanSubscription
+          ?.cancel(); // Cancel previous subscription if any
+      _wifiScanSubscription = WiFiScan.instance.onScannedResultsAvailable
+          .listen((List<WiFiAccessPoint> results) {
+        // Sort by RSSI (strongest first), then by SSID for stability
+        results.sort((a, b) {
+          final rssiComp = b.level.compareTo(a.level);
+          if (rssiComp != 0) return rssiComp;
+          return a.ssid.compareTo(b.ssid);
+        });
+        if (state is WifiScanning || state is WifiScanSuccess) {
+          // Only emit if still relevant
+          emit(WifiScanSuccess(results));
+        }
+      }, onError: (error) {
+        // print("Error listening to Wi-Fi scan results: $error");
+        if (state is WifiScanning || state is WifiScanSuccess) {
+          emit(WifiScanFailure(
+              "Error receiving Wi-Fi scan results: ${error.toString()}"));
+        }
+        _isScanInProgress = false; // Reset flag on error
+      }, onDone: () {
+        _isScanInProgress = false; // Reset flag when stream is done
+      });
 
       // Fetch initial results as onScannedResultsAvailable might not fire immediately
       final initialResults = await WiFiScan.instance.getScannedResults();
@@ -110,7 +123,6 @@ class WifiBloc extends Bloc<WifiEvent, WifiState> {
       });
       emit(WifiScanSuccess(initialResults)); // Emit initial results
       // _isScanInProgress will be set to false when the stream is done or an error occurs.
-
     } catch (e) {
       // print("Error during Wi-Fi scan process: $e");
       emit(WifiScanFailure("Wi-Fi scan process failed: ${e.toString()}"));
@@ -126,7 +138,6 @@ class WifiBloc extends Bloc<WifiEvent, WifiState> {
   @override
   Future<void> close() {
     _wifiScanSubscription?.cancel();
-    WiFiScan.instance.stopScan().catchError((_){}); // Attempt to stop scan on BLoC close
     return super.close();
   }
 }

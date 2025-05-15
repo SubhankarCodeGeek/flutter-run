@@ -1,25 +1,25 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-abstract class BluetoothState extends Equatable {
-  const BluetoothState();
+abstract class MyBleState extends Equatable {
+  const MyBleState();
 
   @override
   List<Object?> get props => [];
 }
 
 /// Initial state of the BluetoothBloc.
-class BluetoothInitial extends BluetoothState { // Renamed for clarity
+class BluetoothInitial extends MyBleState {
   const BluetoothInitial();
 }
 
 /// State indicating that BLE scanning is in progress.
-class BluetoothScanning extends BluetoothState { // Renamed for clarity
+class BluetoothScanning extends MyBleState {
   const BluetoothScanning();
 }
 
 /// State indicating that BLE scanning has finished and devices have been found.
-class BluetoothDevicesFound extends BluetoothState { // Renamed for clarity
+class BluetoothDevicesFound extends MyBleState {
   final List<BluetoothDevice> devices;
 
   const BluetoothDevicesFound(this.devices);
@@ -29,7 +29,7 @@ class BluetoothDevicesFound extends BluetoothState { // Renamed for clarity
 }
 
 /// State indicating that a connection attempt to a BLE device is in progress.
-class BluetoothConnecting extends BluetoothState { // Renamed for clarity
+class BluetoothConnecting extends MyBleState {
   final BluetoothDevice device;
 
   const BluetoothConnecting(this.device);
@@ -40,7 +40,7 @@ class BluetoothConnecting extends BluetoothState { // Renamed for clarity
 
 /// State indicating that the app is connected to a BLE device,
 /// services have been discovered, and the provisioning characteristic is ready.
-class BluetoothReadyForProvisioning extends BluetoothState { // Renamed for clarity
+class BluetoothReadyForProvisioning extends MyBleState {
   final BluetoothDevice connectedDevice;
 
   const BluetoothReadyForProvisioning(this.connectedDevice);
@@ -50,18 +50,18 @@ class BluetoothReadyForProvisioning extends BluetoothState { // Renamed for clar
 }
 
 /// State indicating that Wi-Fi credentials are being sent to the BLE device.
-class BluetoothSendingWifiCredentials extends BluetoothState { // Renamed for clarity
+class BluetoothSendingWifiCredentials extends MyBleState {
   const BluetoothSendingWifiCredentials();
 }
 
 /// State indicating that the app is waiting for a provisioning confirmation
 /// (success/failure) from the BLE device after sending credentials.
-class BluetoothAwaitingProvisioningConfirmation extends BluetoothState { // Renamed for clarity
+class BluetoothAwaitingProvisioningConfirmation extends MyBleState {
   const BluetoothAwaitingProvisioningConfirmation();
 }
 
 /// State indicating that the Wi-Fi provisioning process on the BLE device was successful.
-class BluetoothProvisioningSuccess extends BluetoothState { // Renamed for clarity
+class BluetoothProvisioningSuccess extends MyBleState {
   final BluetoothDevice device;
   final String message;
 
@@ -72,7 +72,7 @@ class BluetoothProvisioningSuccess extends BluetoothState { // Renamed for clari
 }
 
 /// State indicating that the Wi-Fi provisioning process on the BLE device failed.
-class BluetoothProvisioningFailure extends BluetoothState { // Renamed for clarity
+class BluetoothProvisioningFailure extends MyBleState {
   final BluetoothDevice? device;
   final String error;
 
@@ -83,7 +83,7 @@ class BluetoothProvisioningFailure extends BluetoothState { // Renamed for clari
 }
 
 /// Generic state emitted when any general BLE operation fails.
-class BluetoothError extends BluetoothState { // Renamed for clarity
+class BluetoothError extends MyBleState {
   final String message;
 
   const BluetoothError(this.message);

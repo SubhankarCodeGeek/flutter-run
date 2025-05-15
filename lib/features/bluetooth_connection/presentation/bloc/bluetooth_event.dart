@@ -10,7 +10,7 @@ abstract class BluetoothEvent extends Equatable {
 }
 
 /// Event to trigger scanning for nearby BLE devices.
-class StartBleScanEvent extends BluetoothEvent { // Renamed for clarity
+class StartBleScanEvent extends BluetoothEvent {
   const StartBleScanEvent();
 }
 
