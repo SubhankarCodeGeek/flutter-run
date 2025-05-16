@@ -1,5 +1,6 @@
 // HomeScreen
 import 'package:flutter/material.dart';
+import 'package:fultter_run/core/utils/utils.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -8,14 +9,14 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Home"),
+        title: Text("home".translate(context)),
         leading: IconButton(
             onPressed: () {
               Scaffold.of(context).openDrawer();
             },
             icon: const Icon(Icons.menu)),
       ),
-      body: const Center(child: Text("Welcome to Home Screen")),
+      body: Center(child: Text("home_screen_welcome".translate(context))),
     );
   }
 }

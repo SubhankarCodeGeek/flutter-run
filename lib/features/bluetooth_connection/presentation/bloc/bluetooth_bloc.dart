@@ -6,7 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Local imports for events and states, assuming they are in the same feature folder or accessible path
+// Local imports for events and states
 import 'bluetooth_event.dart';
 import 'bluetooth_state.dart';
 
@@ -31,26 +31,22 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
       "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"); // NUS RX char :contentReference[oaicite:1]{index=1}
 
   BluetoothBloc() : super(const BluetoothInitial()) {
-    // Register event handlers
     on<StartBleScanEvent>(_onStartBleScan);
     on<ConnectToDeviceEvent>(_onConnectToDevice);
     on<SendWifiCredentialsEvent>(_onSendWifiCredentials);
     on<DisconnectFromDeviceEvent>(_onDisconnect);
   }
 
-  /// Handles the [StartBleScanEvent] to scan for nearby BLE devices.
   Future<void> _onStartBleScan(
     StartBleScanEvent event,
     Emitter<MyBleState> emit,
   ) async {
     emit(const BluetoothScanning());
     try {
-      // Check if Bluetooth is supported on the device
       if (!(await FlutterBluePlus.isSupported)) {
         emit(const BluetoothError("Bluetooth not supported on this device."));
         return;
       }
-      // Check if Bluetooth adapter is enabled
       if (await FlutterBluePlus.adapterState.first !=
           BluetoothAdapterState.on) {
         emit(const BluetoothError("Bluetooth is off. Please turn it on."));
@@ -58,47 +54,45 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
       }
 
       final List<BluetoothDevice> foundDevices = [];
-      final Set<DeviceIdentifier> discoveredDeviceIds =
-          {}; // To avoid duplicate device entries
-
+      final Set<DeviceIdentifier> discoveredDeviceIds = {};
       final scanCompleter = Completer<void>();
       StreamSubscription? scanResultsSubscription;
 
       // Listen to scan results
       scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
         for (ScanResult r in results) {
-          // Add device if it has a platform name and hasn't been discovered yet
+          // Filter by devices that advertise your specific service UUID (done by startScan's withServices)
+          // and ensure it has a name and is not already added.
           if (r.device.platformName.isNotEmpty &&
               !discoveredDeviceIds.contains(r.device.remoteId)) {
-            // print('Found BLE device: ${r.device.platformName} (${r.device.remoteId})');
+            // print('Found target device: ${r.device.platformName} (${r.device.remoteId})');
             foundDevices.add(r.device);
             discoveredDeviceIds.add(r.device.remoteId);
           }
         }
       });
 
-      // Start scanning for a predefined duration
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+      // --- KEY IMPROVEMENT: Scan specifically for devices advertising your provisioning service ---
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 7), // Slightly longer scan
+        withServices: [_provisioningServiceUuid], // Filter by your service UUID
+      );
 
-      // Ensure the scan completer finishes after the timeout
-      Future.delayed(const Duration(seconds: 5), () {
-        if (!scanCompleter.isCompleted) {
-          scanCompleter.complete();
-        }
+      Future.delayed(const Duration(seconds: 7), () {
+        if (!scanCompleter.isCompleted) scanCompleter.complete();
       });
 
-      await scanCompleter.future; // Wait for scan to complete
-      await FlutterBluePlus.stopScan(); // Explicitly stop scanning
-      await scanResultsSubscription
-          ?.cancel(); // Cancel the subscription to scan results
+      await scanCompleter.future;
+      // No need to call FlutterBluePlus.stopScan() if timeout is used in startScan,
+      // but it doesn't hurt to call it to be sure.
+      await FlutterBluePlus.stopScan();
+      await scanResultsSubscription?.cancel();
 
       if (foundDevices.isEmpty) {
-        // print("No BLE devices found");
-        emit(const BluetoothDevicesFound(
-            [])); // Emit empty list if no devices are found
+        // print("No relevant BLE devices found advertising the provisioning service.");
+        emit(const BluetoothDevicesFound([]));
       } else {
-        emit(BluetoothDevicesFound(
-            List.from(foundDevices))); // Emit the list of found devices
+        emit(BluetoothDevicesFound(List.from(foundDevices)));
       }
     } catch (e) {
       // print('BLE Scan failed: $e');
@@ -106,150 +100,172 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
     }
   }
 
-  /// Handles the [ConnectToDeviceEvent] to connect to a selected BLE device
-  /// and discover its services and characteristics for provisioning.
   Future<void> _onConnectToDevice(
     ConnectToDeviceEvent event,
     Emitter<MyBleState> emit,
   ) async {
-    emit(BluetoothConnecting(event.device)); // Indicate connection attempt
-    try {
-      final device = event.device;
+    emit(BluetoothConnecting(event.device));
+    final device = event.device;
+    int maxRetries = 2; // Max 2 retries (total 3 attempts)
+    int currentAttempt = 0;
+    bool isConnectedAndSetup = false;
 
-      // Cancel any previous connection state subscription
-      await _connectionStateSubscription?.cancel();
-      // Listen to the device's connection state
-      _connectionStateSubscription = device.connectionState
-          .listen((BluetoothConnectionState connectionState) {
-        // print('Device ${device.remoteId} connection state: $connectionState');
-        if (connectionState == BluetoothConnectionState.disconnected) {
-          // Handle unexpected disconnections
-          // Only emit error if not intentionally disconnecting or after successful provisioning
-          bool isRelevantState = this.state is BluetoothReadyForProvisioning ||
-              this.state is BluetoothConnecting ||
-              this.state is BluetoothAwaitingProvisioningConfirmation ||
-              this.state is BluetoothSendingWifiCredentials;
+    // Stop scanning before attempting to connect, if not already stopped.
+    // This should ideally be handled by the UI flow (e.g., not allowing connect while scanning).
+    // However, an explicit stop here can be a safeguard.
+    if (FlutterBluePlus.isScanningNow) {
+      await FlutterBluePlus.stopScan();
+    }
 
-          if (isRelevantState &&
-              !(this.state is BluetoothProvisioningSuccess)) {
-            // print('Device ${device.remoteId} disconnected unexpectedly.');
-            add(DisconnectFromDeviceEvent(device)); // Trigger cleanup logic
-            emit(BluetoothError('Device ${device.remoteId} disconnected'));
-          }
+    await _connectionStateSubscription?.cancel(); // Cancel previous listener
+    _connectionStateSubscription = device.connectionState
+        .listen((BluetoothConnectionState connectionState) {
+      // print('Device ${device.remoteId} connection state changed: $connectionState');
+      if (connectionState == BluetoothConnectionState.disconnected) {
+        bool isRelevantState = state is BluetoothReadyForProvisioning ||
+            state is BluetoothConnecting ||
+            state is BluetoothAwaitingProvisioningConfirmation ||
+            state is BluetoothSendingWifiCredentials;
+        if (isRelevantState && state is! BluetoothProvisioningSuccess) {
+          // print('Device ${device.remoteId} disconnected unexpectedly during active phase.');
+          add(DisconnectFromDeviceEvent(device)); // Trigger cleanup
+          // Avoid emitting error here if retry logic will handle it or if disconnect is part of cleanup
         }
-      });
+      }
+    });
 
-      // Attempt to connect to the device
-      await device.connect(
-          timeout: const Duration(seconds: 15), autoConnect: false);
-      // Discover services offered by the device
-      List<BluetoothService> services = await device.discoverServices();
+    while (currentAttempt <= maxRetries && !isConnectedAndSetup) {
+      currentAttempt++;
+      print("Connection attempt $currentAttempt for ${device.remoteId}");
+      try {
+        await device.connect(
+            timeout: const Duration(seconds: 15),
+            autoConnect: false // Explicitly false for provisioning
+            );
 
-      _provisioningCharacteristic = null; // Reset before searching
+        // Short delay to allow connection to stabilize before service discovery
+        // This can sometimes help with peripherals that are slow to initialize post-connection.
+        await Future.delayed(const Duration(milliseconds: 500));
 
-      // Iterate through services and characteristics to find the provisioning characteristic
-      for (final service in services) {
-        // print('Service found: ${service.uuid.str}');
-        // IMPORTANT: Filter by your specific provisioning service UUID
-        if (service.uuid == _provisioningServiceUuid) {
-          for (final characteristic in service.characteristics) {
-            // print('Characteristic found: ${characteristic.uuid.str} with props ${characteristic.properties}');
-            // IMPORTANT: Filter by your specific provisioning characteristic UUID
-            if (characteristic.uuid == _provisioningCharacteristicUuid) {
-              final canWrite = characteristic.properties.write ||
-                  characteristic.properties.writeWithoutResponse;
-              final canNotify = characteristic.properties.notify ||
-                  characteristic.properties.indicate;
+        if (!device.isConnected) {
+          throw Exception(
+              "Device failed to report connected state after connect call.");
+        }
 
-              // Check if the characteristic supports required properties (write and notify/indicate)
-              if (canWrite && canNotify) {
-                _provisioningCharacteristic = characteristic;
-                _charValueStream = characteristic
-                    .onValueReceived; // Stream for characteristic value changes
+        List<BluetoothService> services = await device.discoverServices();
+        _provisioningCharacteristic = null;
 
-                // Cancel previous characteristic value subscription
-                await _charValueSubscription?.cancel();
-                // Subscribe to value changes (notifications/indications)
-                _charValueSubscription = _charValueStream?.listen((value) {
-                  // This is a general listener. Specific responses are handled after write operations.
-                  // print("BLE Char Value Received (General Listener): ${utf8.decode(value, allowMalformed: true)}");
-                });
-
-                // Enable notifications/indications on the characteristic
-                await characteristic.setNotifyValue(true);
-                // print("Provisioning characteristic (${characteristic.uuid.str}) found and notifications enabled.");
-                break; // Characteristic found
+        for (final service in services) {
+          if (service.uuid == _provisioningServiceUuid) {
+            for (final characteristic in service.characteristics) {
+              if (characteristic.uuid == _provisioningCharacteristicUuid) {
+                final canWrite = characteristic.properties.write ||
+                    characteristic.properties.writeWithoutResponse;
+                final canNotify = characteristic.properties.notify ||
+                    characteristic.properties.indicate;
+                if (canWrite && canNotify) {
+                  _provisioningCharacteristic = characteristic;
+                  _charValueStream = characteristic.onValueReceived;
+                  await _charValueSubscription?.cancel();
+                  _charValueSubscription = _charValueStream?.listen((value) {
+                    /* General listener */
+                  });
+                  await characteristic.setNotifyValue(true);
+                  isConnectedAndSetup = true; // Mark as successful setup
+                  print(
+                      "Provisioning characteristic found and notifications enabled.");
+                  break;
+                }
               }
             }
           }
+          if (isConnectedAndSetup) break;
         }
-        if (_provisioningCharacteristic != null)
-          break; // Service and characteristic found
-      }
 
-      // If the provisioning characteristic is not found, report an error
-      if (_provisioningCharacteristic == null) {
-        await device.disconnect(); // Disconnect if setup failed
-        throw Exception(
-            'Provisioning characteristic not found. Ensure UUIDs match and it supports Write & Notify/Indicate.');
-      }
+        if (!isConnectedAndSetup) {
+          // This means services were discovered, but the specific characteristic wasn't found.
+          throw Exception(
+              'Provisioning characteristic not found after connection. Check UUIDs/device firmware.');
+        }
 
-      emit(BluetoothReadyForProvisioning(
-          device)); // Indicate device is ready for provisioning
-    } catch (e) {
-      // print('Connection or service discovery failed: $e');
-      await event.device
-          .disconnect()
-          .catchError((_) {}); // Attempt to clean up by disconnecting
+        emit(BluetoothReadyForProvisioning(device));
+        return; // Successfully connected and setup
+      } catch (e) {
+        // print('Connection attempt $currentAttempt for ${device.remoteId} failed: $e');
+        // The device.disconnect() call is important to clean up resources before a retry.
+        // It will also trigger the connectionState listener if not already disconnected.
+        await device.disconnect().catchError((_) {
+          // print("Error during disconnect cleanup in retry: $_");
+        });
+
+        if (currentAttempt > maxRetries) {
+          print("Max connection retries reached for ${device.remoteId}.");
+          await _connectionStateSubscription
+              ?.cancel(); // Final cleanup of listener
+          _connectionStateSubscription = null;
+          emit(BluetoothError(
+              'Connection failed after $currentAttempt attempts: ${e.toString()}'));
+          return;
+        }
+        // Wait before retrying (except for the last attempt)
+        if (currentAttempt <= maxRetries) {
+          await Future.delayed(
+              Duration(seconds: currentAttempt * 1)); // Increasing delay
+        }
+      }
+    }
+
+    // If loop finishes without isConnectedAndSetup being true (should be caught by rethrow)
+    if (!isConnectedAndSetup) {
+      await _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = null;
       emit(BluetoothError(
-          'Connection/Service Discovery failed: ${e.toString()}'));
+          'Failed to connect and setup device ${device.remoteId} after multiple attempts.'));
     }
   }
 
-  /// Handles the [SendWifiCredentialsEvent] to send Wi-Fi SSID and password
-  /// to the connected device and await provisioning status.
   Future<void> _onSendWifiCredentials(
     SendWifiCredentialsEvent event,
     Emitter<MyBleState> emit,
   ) async {
-    // Ensure characteristic is available
     if (_provisioningCharacteristic == null || _charValueStream == null) {
       emit(const BluetoothProvisioningFailure(
           'Characteristic not available. Please reconnect.'));
       return;
     }
-    emit(
-        const BluetoothSendingWifiCredentials()); // Indicate credentials are being sent
+    // Ensure device is still connected before attempting to write
+    if (!event.device.isConnected) {
+      emit(BluetoothProvisioningFailure(
+          'Device disconnected before sending credentials.',
+          device: event.device));
+      add(DisconnectFromDeviceEvent(event.device)); // Clean up
+      return;
+    }
+
+    emit(const BluetoothSendingWifiCredentials());
 
     try {
-      // Prepare payload (SSID and password)
       final payload =
           jsonEncode({'ssid': event.ssid, 'password': event.password});
-      final base64Payload =
-          base64Encode(utf8.encode(payload)); // Example encoding
+      final base64Payload = base64Encode(utf8.encode(payload));
       final List<int> bytesToSend = utf8.encode(base64Payload);
 
-      // Ensure notifications are enabled on the characteristic
       if (!_provisioningCharacteristic!.isNotifying) {
         await _provisioningCharacteristic!.setNotifyValue(true);
       }
 
-      // Write credentials to the characteristic
-      bool canWriteWithResponse = _provisioningCharacteristic!
-          .properties.write; // Check if acknowledged write is supported
+      bool canWriteAck = _provisioningCharacteristic!.properties.write;
       await _provisioningCharacteristic!
-          .write(bytesToSend, withoutResponse: !canWriteWithResponse);
-      // print('Wi-Fi credentials sent to ${event.device.remoteId}. SSID: ${event.ssid}');
+          .write(bytesToSend, withoutResponse: !canWriteAck);
+      print(
+          'Wi-Fi credentials sent to ${event.device.remoteId}. SSID: ${event.ssid}');
 
-      emit(
-          const BluetoothAwaitingProvisioningConfirmation()); // Indicate waiting for device response
+      emit(const BluetoothAwaitingProvisioningConfirmation());
 
-      // Wait for the first notification/indication from the device after writing
       final response = await _charValueStream!.first.timeout(
         const Duration(seconds: 30),
-        // Timeout for device to process and respond
         onTimeout: () {
-          // print("Timeout waiting for provisioning confirmation from device.");
+          print("Timeout waiting for provisioning confirmation from device.");
           throw TimeoutException(
               'Device did not respond with provisioning status in time.');
         },
@@ -259,19 +275,14 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
         throw Exception('Empty response from device during provisioning.');
       }
 
-      final String status =
-          utf8.decode(response, allowMalformed: true); // Decode response
-      // print('Received provisioning status from device: $status');
+      final String status = utf8.decode(response, allowMalformed: true);
+      print('Received provisioning status from device: $status');
 
-      // Check device status response
       if (status.toUpperCase().startsWith('SUCCESS') ||
           status.toUpperCase() == 'OK') {
-        // Provisioning successful
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('provisioned_${event.device.remoteId.str}',
-            true); // Mark device as provisioned
+        await prefs.setBool('provisioned_${event.device.remoteId.str}', true);
 
-        // Log success to Firestore (optional)
         await FirebaseFirestore.instance.collection('provisioningStatus').add({
           'deviceId': event.device.remoteId.str,
           'deviceName': event.device.platformName,
@@ -283,12 +294,10 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
         emit(BluetoothProvisioningSuccess(event.device,
             message: "Successfully provisioned: $status"));
       } else {
-        // Provisioning failed on the device side
         throw Exception('Provisioning failed on device: $status');
       }
     } catch (e) {
       // print('Error sending Wi-Fi credentials or processing response: $e');
-      // Log failure to Firestore (optional)
       await FirebaseFirestore.instance.collection('provisioningStatus').add({
         'deviceId': event.device.remoteId.str,
         'deviceName': event.device.platformName,
@@ -296,59 +305,51 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
         'status': 'failure',
         'error': e.toString(),
         'timestamp': Timestamp.now(),
-      }).catchError((_) {}); // Catch Firestore errors too, if any
+      }).catchError((_) {});
       emit(BluetoothProvisioningFailure(e.toString(), device: event.device));
     }
   }
 
-  /// Handles the [DisconnectFromDeviceEvent] to disconnect from the BLE device
-  /// and clean up resources.
   Future<void> _onDisconnect(
     DisconnectFromDeviceEvent event,
     Emitter<MyBleState> emit,
   ) async {
     try {
-      // print('Attempting to disconnect from ${event.device.remoteId}');
-      // Cancel subscriptions
+      // print('Explicit disconnect requested for ${event.device.remoteId}');
       await _charValueSubscription?.cancel();
       _charValueSubscription = null;
       await _connectionStateSubscription?.cancel();
       _connectionStateSubscription = null;
 
-      // Clear characteristic references
       _provisioningCharacteristic = null;
       _charValueStream = null;
 
-      // Disconnect from the device
-      await event.device.disconnect();
+      if (event.device.isConnected) {
+        // Check if actually connected before calling disconnect
+        await event.device.disconnect();
+      }
 
-      emit(const BluetoothInitial()); // Reset to initial state
-      // print('Disconnected from ${event.device.remoteId}');
+      emit(const BluetoothInitial());
+      // print('Disconnected successfully from ${event.device.remoteId}');
     } catch (e) {
-      // print('Error disconnecting: $e');
-      // Avoid emitting error if already in a terminal clean state or after success
+      // print('Error during explicit disconnect: $e');
       if (!(state is BluetoothInitial ||
           state is BluetoothProvisioningSuccess)) {
         emit(BluetoothError('Failed to disconnect: ${e.toString()}'));
       } else {
-        emit(const BluetoothInitial()); // Ensure state is reset
+        emit(const BluetoothInitial());
       }
     }
   }
 
-  /// Called when the BLoC is closed.
-  /// Ensures that any active subscriptions are cancelled.
   @override
   Future<void> close() {
     _charValueSubscription?.cancel();
     _connectionStateSubscription?.cancel();
-    // Consider disconnecting from any connected device if the BLoC is globally closed
-    // This depends on your app's lifecycle management.
-    // Example:
+    // Consider if you need to disconnect from a device if the BLoC is closed during an active connection.
+    // For example:
     // if (state is BluetoothReadyForProvisioning) {
     //   (state as BluetoothReadyForProvisioning).connectedDevice.disconnect().catchError((_){});
-    // } else if (state is BluetoothConnecting) {
-    //   (state as BluetoothConnecting).device.disconnect().catchError((_){});
     // }
     return super.close();
   }

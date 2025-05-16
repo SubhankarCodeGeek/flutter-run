@@ -20,10 +20,18 @@ class NavigationService {
         },
         branches: [
           StatefulShellBranch(
-            routes: [GoRoute(path: '/home', builder: (context, state) => const HomeScreen())],
+            routes: [
+              GoRoute(
+                  path: '/home',
+                  builder: (context, state) => const HomeScreen())
+            ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen())],
+            routes: [
+              GoRoute(
+                  path: '/settings',
+                  builder: (context, state) => const SettingsScreen())
+            ],
           ),
         ],
       ),
@@ -52,14 +60,17 @@ extension NavigationServiceExtension on NavigationService {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('data', style: TextStyle(fontSize: 12)),
-                Text('data'),
+                Row(children: [
+                  Text('data', style: TextStyle(fontSize: 12)),
+                  Text('data')
+                ])
               ],
             ),
           ),
           ListTile(
             title: const Text('Change Language'),
             onTap: () {
+              Navigator.pop(context);
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -67,11 +78,13 @@ extension NavigationServiceExtension on NavigationService {
                   content: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: LocalizationService.supportedLocales.map((locale) {
+                      children:
+                          LocalizationService.supportedLocales.map((locale) {
                         return ListTile(
                           title: Text(locale.languageCode),
                           onTap: () {
-                            BlocProvider.of<LocaleService>(context).changeLocale(locale);
+                            BlocProvider.of<LocaleService>(context)
+                                .changeLocale(locale);
                             Navigator.pop(context);
                           },
                         );
@@ -97,5 +110,9 @@ extension NavigationServiceExtension on NavigationService {
         ],
       ),
     );
+  }
+
+  Widget _profileSection() {
+    return Container();
   }
 }
