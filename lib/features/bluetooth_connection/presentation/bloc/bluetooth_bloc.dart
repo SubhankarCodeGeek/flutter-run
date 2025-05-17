@@ -75,7 +75,7 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
       // --- KEY IMPROVEMENT: Scan specifically for devices advertising your provisioning service ---
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 7), // Slightly longer scan
-        withServices: [_provisioningServiceUuid], // Filter by your service UUID
+        withServices: [], // Filter by your service UUID
       );
 
       Future.delayed(const Duration(seconds: 7), () {
@@ -155,38 +155,38 @@ class BluetoothBloc extends Bloc<BluetoothEvent, MyBleState> {
         List<BluetoothService> services = await device.discoverServices();
         _provisioningCharacteristic = null;
 
-        for (final service in services) {
-          if (service.uuid == _provisioningServiceUuid) {
-            for (final characteristic in service.characteristics) {
-              if (characteristic.uuid == _provisioningCharacteristicUuid) {
-                final canWrite = characteristic.properties.write ||
-                    characteristic.properties.writeWithoutResponse;
-                final canNotify = characteristic.properties.notify ||
-                    characteristic.properties.indicate;
-                if (canWrite && canNotify) {
-                  _provisioningCharacteristic = characteristic;
-                  _charValueStream = characteristic.onValueReceived;
-                  await _charValueSubscription?.cancel();
-                  _charValueSubscription = _charValueStream?.listen((value) {
-                    /* General listener */
-                  });
-                  await characteristic.setNotifyValue(true);
-                  isConnectedAndSetup = true; // Mark as successful setup
-                  print(
-                      "Provisioning characteristic found and notifications enabled.");
-                  break;
-                }
-              }
-            }
-          }
-          if (isConnectedAndSetup) break;
-        }
-
-        if (!isConnectedAndSetup) {
-          // This means services were discovered, but the specific characteristic wasn't found.
-          throw Exception(
-              'Provisioning characteristic not found after connection. Check UUIDs/device firmware.');
-        }
+        // for (final service in services) {
+        //   if (service.uuid == _provisioningServiceUuid) {
+        //     for (final characteristic in service.characteristics) {
+        //       if (characteristic.uuid == _provisioningCharacteristicUuid) {
+        //         final canWrite = characteristic.properties.write ||
+        //             characteristic.properties.writeWithoutResponse;
+        //         final canNotify = characteristic.properties.notify ||
+        //             characteristic.properties.indicate;
+        //         if (canWrite && canNotify) {
+        //           _provisioningCharacteristic = characteristic;
+        //           _charValueStream = characteristic.onValueReceived;
+        //           await _charValueSubscription?.cancel();
+        //           _charValueSubscription = _charValueStream?.listen((value) {
+        //             /* General listener */
+        //           });
+        //           await characteristic.setNotifyValue(true);
+        //           isConnectedAndSetup = true; // Mark as successful setup
+        //           print(
+        //               "Provisioning characteristic found and notifications enabled.");
+        //           break;
+        //         }
+        //       }
+        //     }
+        //   }
+        //   if (isConnectedAndSetup) break;
+        // }
+        //
+        // if (!isConnectedAndSetup) {
+        //   // This means services were discovered, but the specific characteristic wasn't found.
+        //   throw Exception(
+        //       'Provisioning characteristic not found after connection. Check UUIDs/device firmware.');
+        // }
 
         emit(BluetoothReadyForProvisioning(device));
         return; // Successfully connected and setup

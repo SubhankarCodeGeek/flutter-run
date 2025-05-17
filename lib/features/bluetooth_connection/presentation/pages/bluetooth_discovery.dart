@@ -74,7 +74,25 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Select IoT Device')),
+      appBar: AppBar(
+        title: const Text('Select IoT Device'),
+        actions: [
+          BlocBuilder<BluetoothBloc, MyBleState>(
+            // Refresh button reacts to BluetoothBloc state
+            builder: (context, state) {
+              bool isLoading = state is BluetoothScanning ||
+                  state is BluetoothConnecting;
+              return IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: isLoading
+                    ? null
+                    : () => context.read<BluetoothBloc>().add(const StartBleScanEvent()),
+                tooltip: "Refresh Wi-Fi List",
+              );
+            },
+          )
+        ],
+      ),
       body: BlocConsumer<BluetoothBloc, MyBleState>(
         listener: (context, state) {
           if (state is BluetoothError) {
@@ -105,7 +123,8 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => WiFiSelectionScreen(bleDevice: state.connectedDevice),
+                  builder: (_) =>
+                      WiFiSelectionScreen(bleDevice: state.connectedDevice),
                 ),
               );
             });
